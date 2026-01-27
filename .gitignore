@@ -135,3 +135,6 @@ dmypy.json
 *.jpeg
 *.pdf
 
+# claude-toy OpenAI 配置（含 api_key），仅本地使用，勿提交
+claude-toy/openai_config.json
+
