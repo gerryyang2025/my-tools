@@ -32,7 +32,11 @@ python3 cursor-usage/cursor-usage-analyze.py -c usage-events-2025-12-02-composer
 python3 cursor-usage/cursor-usage-analyze.py -c usage-events-2025-12-02-auto.csv
 ```
 
+**Usage example**
 
+![cursor-usage example 1](../asserts/cursor-usage1.png)
+
+![cursor-usage example 2](../asserts/cursor-usage2.png)
 
 ## Features
 
