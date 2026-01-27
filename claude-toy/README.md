@@ -149,6 +149,10 @@ cd claude-toy
 
 At the REPL, type your task in natural language; type `exit`, `quit`, or `q` to exit.
 
+**Usage example**
+
+![claude-toy usage example](../asserts/claude_toy.png)
+
 ---
 
 ## Code Structure
