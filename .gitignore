@@ -97,12 +97,18 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
+.minimax.conf
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# MiniMax TTS config
+minimax-tts/.env
+minimax-tts/.minimax.conf
 
 # Spyder project settings
 .spyderproject
