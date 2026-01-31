@@ -94,6 +94,18 @@ if status.status == "completed":
     audio_url = status.audio_url
 ```
 
+## Example
+
+Below is a successful voice cloning and text-to-speech conversion example:
+
+![Voice Cloner Demo](../asserts/voice_cloner_demo.png)
+
+The example demonstrates:
+- Reference audio upload and voice cloning
+- Prompt audio for enhanced voice quality
+- Text-to-speech conversion using the cloned voice
+- Generated audio output saved as `speech.mp3` with the cloned voice characteristics
+
 ## Command Line Usage
 
 ```bash
