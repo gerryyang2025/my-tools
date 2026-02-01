@@ -614,6 +614,161 @@ class VoiceCloner:
             task_id=result.get("task_id", ""),
             status=result.get("status", "unknown")
         )
+    
+    # ==================== 文件管理方法 ====================
+    
+    def list_files(self, purpose: Optional[str] = None) -> list:
+        """
+        列出所有上传的文件
+        
+        这个方法用于查询账户中已上传的所有文件，可以按类型筛选。
+        
+        Args:
+            purpose: 筛选文件类型，可选值：
+                    - voice_clone: 快速复刻原始文件
+                    - prompt_audio: 音色复刻的示例音频
+                    - t2a_async_input: 异步长文本语音生成合成中
+                    如果不提供，返回所有类型的文件
+        
+        Returns:
+            list: 文件列表，每个文件包含以下字段：
+                - file_id: 文件唯一标识符
+                - filename: 文件名
+                - bytes: 文件大小（字节）
+                - created_at: 创建时间戳
+                - purpose: 文件用途
+        
+        Raises:
+            MiniMaxAPIError: 如果API调用失败
+            
+        Example:
+            cloner = VoiceCloner()
+            
+            # 列出所有文件
+            all_files = cloner.list_files()
+            for f in all_files:
+                print(f"ID: {f['file_id']}, Name: {f['filename']}")
+            
+            # 只列出复刻音频
+            clone_files = cloner.list_files(purpose="voice_clone")
+        """
+        url = f"{self.BASE_URL}/files/list"
+        
+        params = {}
+        if purpose:
+            # 验证 purpose 参数
+            valid_purposes = ["voice_clone", "prompt_audio", "t2a_async_input"]
+            if purpose not in valid_purposes:
+                raise ValueError(
+                    f"Invalid purpose: '{purpose}'. "
+                    f"Must be one of: {', '.join(valid_purposes)}"
+                )
+            params["purpose"] = purpose
+        
+        response = self.session.get(url, params=params)
+        
+        if not response.ok:
+            raise MiniMaxAPIError(
+                f"Failed to list files: {response.text}",
+                response.status_code,
+                response.text
+            )
+        
+        result = response.json()
+        return result.get("files", [])
+    
+    def get_file_info(self, file_id: str) -> dict:
+        """
+        查询单个文件的详细信息
+        
+        这个方法用于获取指定 file_id 的详细元数据信息。
+        
+        Args:
+            file_id: 文件的唯一标识符（从上传接口或列表接口获得）
+        
+        Returns:
+            dict: 文件详情，包含以下字段：
+                - file_id: 文件唯一标识符
+                - filename: 文件名
+                - bytes: 文件大小（字节）
+                - created_at: 创建时间戳
+                - purpose: 文件用途
+                - download_url: 文件下载链接（如果有）
+        
+        Raises:
+            MiniMaxAPIError: 如果API调用失败或文件不存在
+            
+        Example:
+            cloner = VoiceCloner()
+            file_info = cloner.get_file_info("123456789")
+            print(f"文件名: {file_info['filename']}")
+            print(f"大小: {file_info['bytes'] / 1024:.2f} KB")
+            print(f"创建时间: {file_info['created_at']}")
+        """
+        url = f"{self.BASE_URL}/files/retrieve"
+        
+        params = {"file_id": file_id}
+        
+        response = self.session.get(url, params=params)
+        
+        if not response.ok:
+            raise MiniMaxAPIError(
+                f"Failed to get file info: {response.text}",
+                response.status_code,
+                response.text
+            )
+        
+        result = response.json()
+        
+        if "file" not in result:
+            raise MiniMaxAPIError(
+                f"Invalid response format: no 'file' field",
+                response.status_code,
+                response.text
+            )
+        
+        return result["file"]
+    
+    def delete_file(self, file_id: str) -> bool:
+        """
+        删除上传的文件
+        
+        这个方法用于删除指定 file_id 的文件。删除后该文件将无法恢复。
+        
+        Args:
+            file_id: 要删除的文件唯一标识符
+        
+        Returns:
+            bool: 删除是否成功
+            
+        Raises:
+            MiniMaxAPIError: 如果API调用失败或文件不存在
+            
+        Example:
+            cloner = VoiceCloner()
+            
+            # 删除指定文件
+            success = cloner.delete_file("123456789")
+            if success:
+                print("文件删除成功")
+            else:
+                print("文件删除失败")
+        """
+        url = f"{self.BASE_URL}/files/{file_id}"
+        
+        response = self.session.delete(url)
+        
+        if not response.ok:
+            raise MiniMaxAPIError(
+                f"Failed to delete file: {response.text}",
+                response.status_code,
+                response.text
+            )
+        
+        result = response.json()
+        base_resp = result.get("base_resp", {})
+        
+        return base_resp.get("status_code", -1) == 0
 
 
 def main():
@@ -660,6 +815,26 @@ Step-by-Step Workflow:
   python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id> \
       --prompt-file-id <prompt_file_id> --prompt-text-file prompt_text.txt \
       --text-file speech_text.txt
+
+File Management:
+  # List all uploaded files
+  python voice_cloner.py --list-files
+
+  # List only voice clone files
+  python voice_cloner.py --list-files --purpose voice_clone
+
+  # List only prompt audio files
+  python voice_cloner.py --list-files -u prompt_audio
+
+  # Get detailed info about a specific file
+  python voice_cloner.py --get-file-info 123456789
+
+  # Delete a specific file (will prompt for confirmation)
+  python voice_cloner.py --delete-file 123456789
+
+  # Output in JSON format
+  python voice_cloner.py --list-files --json
+  python voice_cloner.py --get-file-info 123456789 --json
 
 For more information, visit: https://platform.minimaxi.com/docs/guides/speech-voice-clone
         """,
@@ -733,6 +908,32 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
              "Use this instead of --prompt-text for long content."
     )
     
+    # File management options
+    file_mgmt_group = parser.add_argument_group("File Management")
+    file_mgmt_group.add_argument(
+        "--list-files", "-L",
+        action="store_true",
+        help="List all uploaded files. Use --purpose to filter by type."
+    )
+    file_mgmt_group.add_argument(
+        "--purpose", "-u",
+        choices=["voice_clone", "prompt_audio", "t2a_async_input"],
+        help="Filter files by purpose when listing. "
+             "voice_clone: clone audio files, "
+             "prompt_audio: prompt audio files, "
+             "t2a_async_input: async T2A input files"
+    )
+    file_mgmt_group.add_argument(
+        "--get-file-info", "-I",
+        metavar="FILE_ID",
+        help="Get detailed information about a specific file by its ID"
+    )
+    file_mgmt_group.add_argument(
+        "--delete-file", "-D",
+        metavar="FILE_ID",
+        help="Delete a specific file by its ID. WARNING: This action cannot be undone!"
+    )
+    
     # Output options
     output_group = parser.add_argument_group("Output Options")
     output_group.add_argument(
@@ -765,6 +966,98 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
     cloner = VoiceCloner(api_key=args.api_key)
     
     try:
+        # File management commands (highest priority)
+        if args.list_files:
+            # 列出所有文件
+            from datetime import datetime
+            
+            files = cloner.list_files(purpose=args.purpose)
+            
+            if args.json:
+                import json
+                output = {
+                    "files": files,
+                    "total": len(files)
+                }
+                print(json.dumps(output, indent=2, ensure_ascii=False))
+            else:
+                print(f"\n{'='*60}")
+                print(f"文件列表")
+                print(f"{'='*60}")
+                
+                if not files:
+                    print("没有找到文件")
+                else:
+                    purpose_name = {
+                        "voice_clone": "复刻音频",
+                        "prompt_audio": "示例音频",
+                        "t2a_async_input": "异步T2A输入"
+                    }
+                    
+                    for i, f in enumerate(files, 1):
+                        created_time = datetime.fromtimestamp(f.get("created_at", 0)).strftime("%Y-%m-%d %H:%M:%S")
+                        purpose_chinese = purpose_name.get(f.get("purpose", ""), f.get("purpose", "未知"))
+                        size_kb = f.get("bytes", 0) / 1024
+                        
+                        print(f"\n{i}. 文件 ID: {f.get('file_id', 'N/A')}")
+                        print(f"   文件名: {f.get('filename', 'N/A')}")
+                        print(f"   大小: {size_kb:.2f} KB")
+                        print(f"   用途: {purpose_chinese}")
+                        print(f"   创建时间: {created_time}")
+                    
+                    print(f"\n{'-'*60}")
+                    print(f"共 {len(files)} 个文件")
+                print()
+            return 0
+        
+        if args.get_file_info:
+            # 查询单个文件详情
+            file_info = cloner.get_file_info(args.get_file_info)
+            
+            if args.json:
+                import json
+                print(json.dumps(file_info, indent=2, ensure_ascii=False))
+            else:
+                from datetime import datetime
+                
+                print(f"\n{'='*60}")
+                print(f"文件详情")
+                print(f"{'='*60}")
+                print(f"文件 ID: {file_info.get('file_id', 'N/A')}")
+                print(f"文件名: {file_info.get('filename', 'N/A')}")
+                print(f"大小: {file_info.get('bytes', 0) / 1024:.2f} KB")
+                print(f"用途: {file_info.get('purpose', 'N/A')}")
+                created_time = datetime.fromtimestamp(file_info.get("created_at", 0)).strftime("%Y-%m-%d %H:%M:%S")
+                print(f"创建时间: {created_time}")
+                
+                if file_info.get("download_url"):
+                    print(f"下载链接: {file_info.get('download_url')}")
+                print()
+            return 0
+        
+        if args.delete_file:
+            # 删除文件
+            confirm = input(f"确定要删除文件 {args.delete_file} 吗? (输入 y 确认): ")
+            if confirm.lower() != 'y':
+                print("取消删除")
+                return 0
+            
+            success = cloner.delete_file(args.delete_file)
+            
+            if success:
+                if args.json:
+                    import json
+                    print(json.dumps({"success": True, "file_id": args.delete_file}, indent=2))
+                else:
+                    print(f"\n文件 {args.delete_file} 删除成功")
+            else:
+                if args.json:
+                    import json
+                    print(json.dumps({"success": False, "file_id": args.delete_file}, indent=2))
+                else:
+                    print(f"\n文件 {args.delete_file} 删除失败")
+            return 0
+        
         # Step-by-step workflow mode
         if args.step:
             if args.step == 1:
