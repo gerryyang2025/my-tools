@@ -103,6 +103,47 @@ python voice_cloner.py \
     --text "要转换的文本内容"
 ```
 
+#### Step-by-Step Workflow Commands
+
+```bash
+# Step 1: Upload reference audio and get file_id
+python voice_cloner.py --step 1 --audio reference.m4a
+
+# Step 2: Upload prompt audio for enhanced quality (optional)
+python voice_cloner.py --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
+
+# Step 3: Complete voice cloning (basic)
+python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id>
+
+# Step 3: Complete voice cloning (with prompt audio)
+python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id> \
+    --prompt-file-id <prompt_file_id> --prompt-text-file prompt_text.txt \
+    --text-file speech_text.txt
+```
+
+#### File Management Commands
+
+```bash
+# List all uploaded files
+python voice_cloner.py --list-files
+
+# List only voice clone files
+python voice_cloner.py --list-files --purpose voice_clone
+
+# List only prompt audio files
+python voice_cloner.py --list-files -u prompt_audio
+
+# Get detailed info about a specific file
+python voice_cloner.py --get-file-info 123456789
+
+# Delete a specific file (will prompt for confirmation)
+python voice_cloner.py --delete-file 123456789
+
+# Output in JSON format
+python voice_cloner.py --list-files --json
+python voice_cloner.py --get-file-info 123456789 --json
+```
+
 ## Detailed Workflow Examples
 
 ### 1. Upload Reference Audio
@@ -489,6 +530,86 @@ Result object for cloning operations, containing the following attributes:
 - `audio_url` (str, optional): Generated audio URL (after task completion).
 - `error_message` (str, optional): Error message (when task fails).
 
+### File Management Methods
+
+#### `list_files(purpose=None)`
+
+List all uploaded files in your account.
+
+**Parameters:**
+- `purpose` (str, optional): Filter files by type. Available options:
+  - `"voice_clone"`: Reference audio files for voice cloning
+  - `"prompt_audio"`: Prompt audio files
+  - `"t2a_async_input"`: Async T2A input files
+  - If not provided, returns all files
+
+**Returns:**
+- `list`: List of files, each containing:
+  - `file_id` (str): Unique file identifier
+  - `filename` (str): Original filename
+  - `bytes` (int): File size in bytes
+  - `created_at` (int): Unix timestamp of creation time
+  - `purpose` (str): File purpose type
+
+**Example:**
+```python
+# List all files
+all_files = cloner.list_files()
+for f in all_files:
+    print(f"ID: {f['file_id']}, Name: {f['filename']}")
+
+# List only voice clone files
+clone_files = cloner.list_files(purpose="voice_clone")
+
+# List only prompt audio files
+prompt_files = cloner.list_files(purpose="prompt_audio")
+```
+
+#### `get_file_info(file_id)`
+
+Get detailed information about a specific file.
+
+**Parameters:**
+- `file_id` (str): The unique file identifier
+
+**Returns:**
+- `dict`: File details including:
+  - `file_id` (str): File unique identifier
+  - `filename` (str): Original filename
+  - `bytes` (int): File size in bytes
+  - `created_at` (int): Unix timestamp of creation time
+  - `purpose` (str): File purpose type
+  - `download_url` (str, optional): File download URL (if available)
+
+**Example:**
+```python
+file_info = cloner.get_file_info("123456789")
+print(f"Filename: {file_info['filename']}")
+print(f"Size: {file_info['bytes'] / 1024:.2f} KB")
+print(f"Created: {file_info['created_at']}")
+```
+
+#### `delete_file(file_id)`
+
+Delete an uploaded file.
+
+**Parameters:**
+- `file_id` (str): The unique file identifier to delete
+
+**Returns:**
+- `bool`: `True` if deletion was successful, `False` otherwise
+
+**Example:**
+```python
+success = cloner.delete_file("123456789")
+if success:
+    print("File deleted successfully")
+else:
+    print("Failed to delete file")
+```
+
+**Warning:** This action cannot be undone. Once deleted, the file cannot be recovered.
+
 ## Best Practices
 
 ### 1. API Key Management
@@ -564,6 +685,36 @@ Reference audio should be between 10 seconds and 5 minutes. Audio outside this r
 ### Q: How long can the prompt audio be?
 
 Prompt audio should be less than 8 seconds for optimal results.
+
+### Q: Do uploaded files expire?
+
+There is no explicit documentation stating that uploaded files expire. Files uploaded via the file management API should remain in your account until you manually delete them. You can use the `list_files()` method to view all your uploaded files and `delete_file()` to remove files you no longer need.
+
+### Q: What is the difference between file_id and voice_id?
+
+- `file_id`: A unique identifier for an uploaded audio file. It is obtained by uploading audio files (reference audio or prompt audio) and remains valid until the file is deleted.
+- `voice_id`: A custom identifier you create for a cloned voice profile. Once you clone a voice using a `file_id`, you receive a `voice_id` that can be used for text-to-speech synthesis. Note that cloned voices are temporary and expire after 168 hours (7 days) unless used for synthesis.
+
+### Q: Can I reuse a file_id for multiple voice cloning operations?
+
+Yes, once you upload an audio file and obtain its `file_id`, you can use that `file_id` to clone voices multiple times. The same reference audio can be used to create different `voice_id` values.
+
+### Q: How do I check what files I have uploaded?
+
+Use the `--list-files` command to view all uploaded files:
+
+```bash
+# List all files
+python voice_cloner.py --list-files
+
+# List only voice clone files
+python voice_cloner.py --list-files --purpose voice_clone
+
+# Output in JSON format
+python voice_cloner.py --list-files --json
+```
+
+This will show you all uploaded files including their `file_id`, filename, size, purpose, and creation time.
 
 ## References
 

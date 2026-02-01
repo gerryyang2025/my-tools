@@ -8,6 +8,7 @@ A Python library for voice cloning and text-to-speech synthesis using the MiniMa
 - **Text-to-Speech**: Convert text to speech using cloned or built-in voices
 - **Synchronous & Async**: Support for both sync and async TTS operations
 - **Task Management**: Query task status and retrieve generated audio
+- **File Management**: List, query, and delete uploaded audio files
 - **Multi-Format Config**: Support for .env, JSON, and INI configuration files
 - **CLI Support**: Command-line interface for quick testing and scripting
 
@@ -94,6 +95,30 @@ if status.status == "completed":
     audio_url = status.audio_url
 ```
 
+### File Management
+
+Manage your uploaded audio files:
+
+```python
+# List all uploaded files
+files = cloner.list_files()
+for f in files:
+    print(f"ID: {f['file_id']}, Name: {f['filename']}")
+
+# List only voice clone files
+clone_files = cloner.list_files(purpose="voice_clone")
+
+# Get detailed info about a specific file
+file_info = cloner.get_file_info("123456789")
+print(f"Filename: {file_info['filename']}")
+print(f"Size: {file_info['bytes'] / 1024:.2f} KB")
+
+# Delete a file
+success = cloner.delete_file("123456789")
+if success:
+    print("File deleted successfully")
+```
+
 ## Example
 
 Below is a successful voice cloning and text-to-speech conversion example:
@@ -121,6 +146,42 @@ python voice_cloner.py \
     --output result.mp3
 ```
 
+### Step-by-Step Workflow
+
+```bash
+# Step 1: Upload reference audio and get file_id
+python voice_cloner.py --step 1 --audio reference.m4a
+
+# Step 2: Upload prompt audio for enhanced quality (optional)
+python voice_cloner.py --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
+
+# Step 3: Complete voice cloning (basic)
+python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id>
+```
+
+### File Management Commands
+
+```bash
+# List all uploaded files
+python voice_cloner.py --list-files
+
+# List only voice clone files
+python voice_cloner.py --list-files --purpose voice_clone
+
+# List only prompt audio files
+python voice_cloner.py --list-files -u prompt_audio
+
+# Get detailed info about a specific file
+python voice_cloner.py --get-file-info 123456789
+
+# Delete a specific file (will prompt for confirmation)
+python voice_cloner.py --delete-file 123456789
+
+# Output in JSON format
+python voice_cloner.py --list-files --json
+python voice_cloner.py --get-file-info 123456789 --json
+```
+
 ## Supported Audio Formats
 
 | Type | Formats | Max Size | Duration |
@@ -132,6 +193,8 @@ python voice_cloner.py \
 
 ### VoiceCloner
 
+#### Core Methods
+
 | Method | Description |
 |--------|-------------|
 | `clone_voice()` | Clone a voice from reference audio |
@@ -139,6 +202,17 @@ python voice_cloner.py \
 | `text_to_speech_async()` | Async TTS for long text |
 | `get_task_status()` | Query async task status |
 | `generate_audio_from_task()` | Get audio from completed task |
+
+#### File Management Methods
+
+| Method | Description |
+|--------|-------------|
+| `list_files(purpose=None)` | List all uploaded files, optionally filtered by type |
+| `get_file_info(file_id)` | Get detailed information about a specific file |
+| `delete_file(file_id)` | Delete an uploaded file |
+| `upload_clone_audio(audio_path)` | Upload reference audio and get file_id |
+| `upload_prompt_audio(audio_path)` | Upload prompt audio and get file_id |
+| `clone_voice_with_file_id()` | Clone voice using pre-obtained file_id |
 
 ### Result Classes
 
