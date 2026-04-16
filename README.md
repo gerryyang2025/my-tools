@@ -10,6 +10,8 @@ A collection of AI-related tools and utilities.
 
 - **[minimax-tts](minimax-tts/README.md)** — Python library for voice cloning and text-to-speech synthesis using the MiniMax API. Features include voice cloning from reference audio, TTS conversion with cloned voices, synchronous and async operation support, task management for audio retrieval, and CLI interface for quick testing.
 
+- **[tencent-meeting](tencent-meeting/README.md)** — Python script to query Tencent Meeting info by Meeting Code and extract `meeting_id`. Configured via environment variables / local `.env` (secrets are not stored in source).
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

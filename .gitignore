@@ -110,6 +110,9 @@ venv.bak/
 minimax-tts/.env
 minimax-tts/.minimax.conf
 
+# Tencent Meeting API secrets（本地 .env，勿提交）
+tencent-meeting/.env
+
 # Spyder project settings
 .spyderproject
 .spyproject
