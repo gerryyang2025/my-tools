@@ -2,6 +2,17 @@
 
 A Python library for voice cloning and text-to-speech synthesis using the MiniMax API.
 
+## Project layout
+
+| Path | Role |
+|------|------|
+| `voice_cloner` | Executable launcher at the repo root; runs `scripts/voice_cloner.py` with `minimax-tts/.venv` |
+| `scripts/voice_cloner.py` | Library and CLI implementation (`VoiceCloner`, `main`) |
+| `install.sh` | Creates `.venv`, installs `requirements.txt`, optional `.env` from `.env.example` |
+| `requirements.txt` | Locked dependencies (`requests`, `urllib3`, …) |
+
+Run CLI commands from the **`minimax-tts`** directory so `./voice_cloner` and `.venv` resolve correctly.
+
 ## Features
 
 - **Voice Cloning**: Upload reference audio to clone specific voices
@@ -14,40 +25,60 @@ A Python library for voice cloning and text-to-speech synthesis using the MiniMa
 
 ## Requirements
 
-- Python 3.7+
-- requests
-- python-dotenv (optional, for .env file support)
+- **Python** 3.7 or newer (3.9+ recommended; matches Apple/Xcode toolchains many developers use)
+- **Dependencies** declared in [`requirements.txt`](requirements.txt) (`requests`, `urllib3`, etc.)
 
 ## Installation
 
-```bash
-# Clone or copy the project
-git clone <repository-url>
-cd minimax-tts
+From the **`minimax-tts`** directory:
 
-# Install dependencies
-pip install requests python-dotenv
+```bash
+chmod +x install.sh voice_cloner   # first clone only, if needed
+./install.sh
+```
+
+This creates **`minimax-tts/.venv`**, installs packages from **`requirements.txt`**, and—if you do not already have one—copies **`.env.example`** to **`.env`** for you to edit.
+
+**Manual install** (optional):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ## Configuration
 
-Set your MiniMax API key. Create a `.env` file in the project directory:
+Set your MiniMax API key. After `./install.sh`, edit **`.env`** in **`minimax-tts`** (or create it yourself):
 
 ```bash
 MINIMAX_API_KEY=your-api-key-here
 ```
 
-Or set it as an environment variable:
+Or set an environment variable:
 
 ```bash
 export MINIMAX_API_KEY="your-api-key-here"
 ```
+
+The bundled tool reads keys from `.env` using its own parser; you do **not** need the `python-dotenv` package for that.
+
+### Speech model (`--model`)
+
+The **`POST /v1/voice_clone`** API accepts only the **`model` enum** listed in the **[Voice Clone API](https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone)** docs — for example **`speech-2.8-hd`**, **`speech-2.8-turbo`**, **`speech-2.6-hd`**, etc. There is **no** bare **`speech-2.8`** string.
+
+This tool defaults to **`speech-2.8-hd`** (official OpenAPI example). Use **`--model speech-2.8-turbo`** for the Turbo variant. Speech quotas under **[Token Plan](https://platform.minimaxi.com/docs/token-plan/intro)** apply separately from the exact model id string.
+
+If the API returns **`insufficient balance`** (**1008**) or other **`base_resp`** errors, check billing and key type in the console.
 
 ## Quick Start
 
 ### Basic Voice Cloning
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")  # directory containing voice_cloner.py
+
 from voice_cloner import VoiceCloner
 
 cloner = VoiceCloner()
@@ -62,6 +93,10 @@ result = cloner.clone_voice(
 ### With Prompt Audio for Enhanced Quality
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
 result = cloner.clone_voice(
     voice_id="my_voice",
     audio_path="/path/to/reference_audio.mp3",
@@ -73,6 +108,12 @@ result = cloner.clone_voice(
 ### Text-to-Speech with Cloned Voice
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
+cloner = VoiceCloner()
+
 # Synchronous TTS (up to 10,000 characters)
 audio_url = cloner.text_to_speech(
     text="Hello, this is a test.",
@@ -83,13 +124,17 @@ audio_url = cloner.text_to_speech(
 ### Async TTS for Long Text
 
 ```python
-# Async TTS for longer content
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
+cloner = VoiceCloner()
+
 task_id = cloner.text_to_speech_async(
     text="Long text content here...",
     voice_id="my_voice"
 )
 
-# Check task status
 status = cloner.get_task_status(task_id)
 if status.status == "completed":
     audio_url = status.audio_url
@@ -100,6 +145,12 @@ if status.status == "completed":
 Manage your uploaded audio files:
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
+cloner = VoiceCloner()
+
 # List all uploaded files
 files = cloner.list_files()
 for f in files:
@@ -133,14 +184,22 @@ The example demonstrates:
 
 ## Command Line Usage
 
+Use **`./voice_cloner`** from the **`minimax-tts`** folder so it picks up **`./.venv`**. You do not need to activate the virtual environment first.
+
+On **macOS**, a bare `python` command is often missing from `PATH`; prefer `./voice_cloner` or, after `source .venv/bin/activate`, the `python` inside the venv.
+
+### `--voice-id` (`-v`)
+
+You define this string yourself—it labels your cloned voice and is **not** assigned by the API. Naming rules: **8–256** characters, **start with a letter**, only letters/digits/`_`/`-` in the middle, **end with a letter or digit**. Examples: `my_voice_01`, `Scarlett_EN`. Full rules and counterexamples: `./voice_cloner --help`. More detail: [USAGE.md](USAGE.md) (Command line usage → `--voice-id`).
+
 ```bash
 # Clone a voice
-python voice_cloner.py \
+./voice_cloner \
     --voice-id my_voice \
     --audio /path/to/sample.mp3
 
 # Text-to-speech
-python voice_cloner.py \
+./voice_cloner \
     --voice-id my_voice \
     --text "要转换的文本内容" \
     --output result.mp3
@@ -150,36 +209,36 @@ python voice_cloner.py \
 
 ```bash
 # Step 1: Upload reference audio and get file_id
-python voice_cloner.py --step 1 --audio reference.m4a
+./voice_cloner --step 1 --audio reference.m4a
 
 # Step 2: Upload prompt audio for enhanced quality (optional)
-python voice_cloner.py --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
+./voice_cloner --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
 
 # Step 3: Complete voice cloning (basic)
-python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id>
+./voice_cloner --step 3 --voice-id my_voice --file-id <file_id>
 ```
 
 ### File Management Commands
 
 ```bash
 # List all uploaded files
-python voice_cloner.py --list-files
+./voice_cloner --list-files
 
 # List only voice clone files
-python voice_cloner.py --list-files --purpose voice_clone
+./voice_cloner --list-files --purpose voice_clone
 
 # List only prompt audio files
-python voice_cloner.py --list-files -u prompt_audio
+./voice_cloner --list-files -u prompt_audio
 
 # Get detailed info about a specific file
-python voice_cloner.py --get-file-info 123456789
+./voice_cloner --get-file-info 123456789
 
 # Delete a specific file (will prompt for confirmation)
-python voice_cloner.py --delete-file 123456789
+./voice_cloner --delete-file 123456789
 
 # Output in JSON format
-python voice_cloner.py --list-files --json
-python voice_cloner.py --get-file-info 123456789 --json
+./voice_cloner --list-files --json
+./voice_cloner --get-file-info 123456789 --json
 ```
 
 ## Supported Audio Formats

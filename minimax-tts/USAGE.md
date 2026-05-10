@@ -30,9 +30,37 @@ With the generated `voice_id`, you can call speech generation APIs for actual te
 
 Before using this tool, you need to obtain an API key from the MiniMax platform. Please visit the MiniMax Developer Platform (https://platform.minimaxi.com/) to register an account and create an API key.
 
-### 2. Set Environment Variable
+### 2. Install this repository
 
-It is recommended to set the API key as an environment variable to avoid hardcoding keys in your code and improve security. Run the following commands in your terminal:
+Use **`install.sh`** from inside the **`minimax-tts`** directory (the folder that contains **`voice_cloner`**, **`scripts/`**, and **`requirements.txt`**):
+
+```bash
+cd minimax-tts
+chmod +x install.sh voice_cloner   # first-time only if execute bits are missing
+./install.sh
+```
+
+This typically:
+
+- Creates **`minimax-tts/.venv`** and installs dependencies from **`requirements.txt`**
+- Verifies that **`requests`** imports correctly inside that environment
+- Copies **`.env.example`** → **`.env`** when **`.env`** does not yet exist (edit **`MINIMAX_API_KEY`** afterward)
+
+**CLI entry point:** Run **`./voice_cloner`** from **`minimax-tts`**. It executes **`scripts/voice_cloner.py`** with **`.venv/bin/python`**, so you usually do **not** need `source .venv/bin/activate`.
+
+**Equivalent without the launcher:**
+
+```bash
+.venv/bin/python3 scripts/voice_cloner.py --help
+```
+
+**macOS:** If `python` is missing from your shell (`command not found: python`), use **`./voice_cloner`** or **`python3`**, or activate the venv (`source .venv/bin/activate` and then `hash -r`) so **`python`** resolves to the interpreter inside **`.venv/bin`**.
+
+**Manual setup** (optional): `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+
+### 3. Configure API key
+
+Prefer a **`.env`** file in **`minimax-tts`** (created or edited after `./install.sh`) or an environment variable:
 
 ```bash
 # macOS/Linux
@@ -42,13 +70,15 @@ export MINIMAX_API_KEY="your-api-key-here"
 $env:MINIMAX_API_KEY="your-api-key-here"
 ```
 
-Alternatively, you can pass the API key directly in your code.
+The bundled CLI reads **`MINIMAX_API_KEY`** from `.env` using built-in parsing—you do **not** need the **`python-dotenv`** package for this tool. You may still pass the key in code for tests; avoid committing secrets.
 
 ## Installation and Import
 
-Copy the `voice_cloner.py` file to your project directory and import it as follows:
+Library code lives in **`scripts/voice_cloner.py`**. Either use the **`./voice_cloner`** CLI from **`minimax-tts`**, or add **`scripts`** to **`sys.path`** and import **`VoiceCloner`**:
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
 from voice_cloner import VoiceCloner
 ```
 
@@ -59,9 +89,11 @@ from voice_cloner import VoiceCloner
 Here is the simplest way to use this tool for voice cloning:
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
 from voice_cloner import VoiceCloner
 
-# Initialize the cloner (automatically reads API key from environment variable)
+# Initialize the cloner (reads MINIMAX_API_KEY from env or .env when configured)
 cloner = VoiceCloner()
 
 # Perform voice cloning
@@ -76,6 +108,8 @@ result = cloner.clone_voice(
 If you need more granular control, you can provide additional parameters:
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
 from voice_cloner import VoiceCloner
 
 cloner = VoiceCloner(api_key="your-api-key-here")
@@ -86,16 +120,47 @@ result = cloner.clone_voice(
     prompt_audio="/path/to/clone_prompt.mp3",  # Prompt audio (optional)
     prompt_text="后来认为啊，是有人抓这鸡，可是抓鸡的地方呢没人听过鸡叫。",  # Prompt text (optional)
     text="大兄弟，听您口音不是本地人吧，头回来天津卫，啊，待会您可甭跟着导航走，那玩意儿净给您往大马路上绕。",  # Text to convert (optional)
-    model="speech-2.8-hd"  # Model to use
+    model="speech-2.8-hd"  # Must be a Voice Clone API enum id (see voice-cloning-clone docs)
 )
 ```
 
 ### Command Line Usage
 
-This tool also supports command line invocation, suitable for quick testing and script integration:
+Use **`./voice_cloner`** from the **`minimax-tts`** directory (after `./install.sh`). Suitable for quick testing and scripting:
+
+#### `--voice-id`（`-v`）命名说明
+
+由你自己起名，用来标记克隆得到的音色；**不是**平台下发的 ID。一键克隆（quick start）与 **Step 3** 必须提供。
+
+| 规则 | 说明 |
+|------|------|
+| 长度 | 8～256 个字符 |
+| 首字符 | 英文字母（`A–Z`、`a–z`） |
+| 中间 | 仅可使用字母、数字、连字符 `-`、下划线 `_` |
+| 末尾 | 必须以字母或数字结尾（**不能**以 `-` 或 `_` 结尾） |
+
+合法示例：`my_voice_01`、`Scarlett_EN`、`CloneVoice2024`。  
+不合法示例：`myvoice`（少于 8 个字符）、`1clone01`（首字符必须是字母）、`my_voice_`（不能以 `_` 结尾）。
+
+命令行帮助（英文 epilog 与同名字段说明）：`./voice_cloner --help`
+
+官方 **`/v1/voice_clone`** 请求体里的 **`model`** 枚举（节选，以 [Voice Clone API](https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone) 为准）：
+
+| `model` 取值 |
+|-------------|
+| `speech-2.8-hd` |
+| `speech-2.8-turbo` |
+| `speech-2.6-hd` |
+| `speech-2.6-turbo` |
+| `speech-02-hd` |
+| `speech-02-turbo` |
+| `speech-01-hd` |
+| `speech-01-turbo` |
+
+说明：产品文档里的「Speech 2.8」对应这里的 **`speech-2.8-hd` / `speech-2.8-turbo`**，没有单独的 **`speech-2.8`** 字符串。
 
 ```bash
-python voice_cloner.py \
+./voice_cloner \
     --voice-id my_voice \
     --audio /path/to/sample.mp3 \
     --prompt-audio /path/to/prompt.mp3 \
@@ -107,16 +172,16 @@ python voice_cloner.py \
 
 ```bash
 # Step 1: Upload reference audio and get file_id
-python voice_cloner.py --step 1 --audio reference.m4a
+./voice_cloner --step 1 --audio reference.m4a
 
 # Step 2: Upload prompt audio for enhanced quality (optional)
-python voice_cloner.py --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
+./voice_cloner --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
 
 # Step 3: Complete voice cloning (basic)
-python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id>
+./voice_cloner --step 3 --voice-id my_voice --file-id <file_id>
 
 # Step 3: Complete voice cloning (with prompt audio)
-python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id> \
+./voice_cloner --step 3 --voice-id my_voice --file-id <file_id> \
     --prompt-file-id <prompt_file_id> --prompt-text-file prompt_text.txt \
     --text-file speech_text.txt
 ```
@@ -125,23 +190,23 @@ python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id> \
 
 ```bash
 # List all uploaded files
-python voice_cloner.py --list-files
+./voice_cloner --list-files
 
 # List only voice clone files
-python voice_cloner.py --list-files --purpose voice_clone
+./voice_cloner --list-files --purpose voice_clone
 
 # List only prompt audio files
-python voice_cloner.py --list-files -u prompt_audio
+./voice_cloner --list-files -u prompt_audio
 
 # Get detailed info about a specific file
-python voice_cloner.py --get-file-info 123456789
+./voice_cloner --get-file-info 123456789
 
 # Delete a specific file (will prompt for confirmation)
-python voice_cloner.py --delete-file 123456789
+./voice_cloner --delete-file 123456789
 
 # Output in JSON format
-python voice_cloner.py --list-files --json
-python voice_cloner.py --get-file-info 123456789 --json
+./voice_cloner --list-files --json
+./voice_cloner --get-file-info 123456789 --json
 ```
 
 ## Detailed Workflow Examples
@@ -451,11 +516,17 @@ For longer text content, use the asynchronous speech synthesis API designed for 
 
 ## Error Handling
 
-This tool includes comprehensive error handling for common exception scenarios:
+This tool includes comprehensive error handling for common exception scenarios.
+
+The snippets below assume **`VoiceCloner`** is available—typically after **`sys.path`** includes **`minimax-tts/scripts`** (see **Installation and Import**) or after installing the package into your environment.
 
 ### API Key Error
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
 try:
     cloner = VoiceCloner(api_key="invalid-key")
 except ValueError as e:
@@ -465,6 +536,12 @@ except ValueError as e:
 ### File Not Found
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
+from voice_cloner import VoiceCloner
+
+cloner = VoiceCloner()
+
 try:
     result = cloner.clone_voice(
         voice_id="test",
@@ -477,8 +554,11 @@ except FileNotFoundError as e:
 ### API Call Failed
 
 ```python
+import sys
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
 from voice_cloner import MiniMaxAPIError
 
+# assumes `cloner` is already constructed (see API Key / File Not Found examples above)
 try:
     result = cloner.clone_voice(...)
 except MiniMaxAPIError as e:
@@ -511,7 +591,7 @@ Perform voice cloning.
 - `prompt_audio` (str, optional): Path to the prompt audio file.
 - `prompt_text` (str, optional): Text content corresponding to the prompt audio.
 - `text` (str, optional): Text content to convert to speech.
-- `model` (str, optional): Model name to use, defaults to `"speech-2.8-hd"`.
+- `model` (str, optional): Must be a **`voice_clone`** API enum value (default **`speech-2.8-hd`**). Allowed values are listed under **`model`** in the official **[Voice Clone API](https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone)** reference — e.g. `speech-2.8-hd`, `speech-2.8-turbo`, `speech-2.6-hd`, … There is no bare `speech-2.8`.
 
 **Returns:**
 - `VoiceCloneResult`: Result object containing task ID and status.
@@ -614,14 +694,16 @@ else:
 
 ### 1. API Key Management
 
-It is recommended to use environment variables or a secure key management service to store API keys, avoiding hardcoding in your code. You can manage sensitive information by setting up `.env` files with the `python-dotenv` library.
+It is recommended to use environment variables or a secure key management service to store API keys, avoiding hardcoding in your code. For this project, place **`MINIMAX_API_KEY`** in **`.env`** under **`minimax-tts`** or export it in your shell; the included **`VoiceCloner`** loader parses `.env` without requiring **`python-dotenv`**. For other applications you may still use **`python-dotenv`** or your platform’s secret store.
 
 ### 2. Error Retry Mechanism
 
 For temporary failures caused by network instability, you can implement retry logic:
 
 ```python
+import sys
 import time
+sys.path.insert(0, "/path/to/minimax-tts/scripts")
 from voice_cloner import VoiceCloner, MiniMaxAPIError
 
 def clone_with_retry(cloner, max_retries=3, **kwargs):
@@ -705,13 +787,13 @@ Use the `--list-files` command to view all uploaded files:
 
 ```bash
 # List all files
-python voice_cloner.py --list-files
+./voice_cloner --list-files
 
 # List only voice clone files
-python voice_cloner.py --list-files --purpose voice_clone
+./voice_cloner --list-files --purpose voice_clone
 
 # Output in JSON format
-python voice_cloner.py --list-files --json
+./voice_cloner --list-files --json
 ```
 
 This will show you all uploaded files including their `file_id`, filename, size, purpose, and creation time.

@@ -1,2 +1,4 @@
 # MiniMax TTS Voice Cloning Tool Dependencies
 requests>=2.25.0
+# urllib3 2.x emits NotOpenSSLWarning on Apple CLI Tools Python (LibreSSL); 1.26.x is fine for requests
+urllib3>=1.26.0,<2

@@ -9,7 +9,7 @@ Usage:
 2. Create a .env file with MINIMAX_API_KEY=your-key
 3. Import and use the VoiceCloner class
 
-Example:
+Example (add minimax-tts/scripts to sys.path, or run via ./voice_cloner):
     from voice_cloner import VoiceCloner
     
     cloner = VoiceCloner(api_key="your-api-key")
@@ -20,18 +20,101 @@ Example:
         prompt_audio="/path/to/prompt.m4a",
         prompt_text="Reference text content"
     )
+
+Token Plan / CLI vs this module:
+    Official CLI docs (mmx-cli: ``mmx speech synthesize``, etc.) describe Speech 2.8 through
+    the command-line tool — https://platform.minimaxi.com/docs/token-plan/minimax-cli
+    This project calls ``POST https://api.minimaxi.com/v1/voice_clone``; the ``model`` field must be one of the
+    enum values in the official Voice Clone API (e.g. ``speech-2.8-hd``, ``speech-2.8-turbo``). There is no bare ``speech-2.8``.
+    See https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone
 """
+
+import os
+import sys
+
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)
+
+# Official enum for POST /v1/voice_clone `model` (Voice Clone API — no plain "speech-2.8")
+VOICE_CLONE_MODELS = (
+    "speech-2.8-hd",
+    "speech-2.8-turbo",
+    "speech-2.6-hd",
+    "speech-2.6-turbo",
+    "speech-02-hd",
+    "speech-02-turbo",
+    "speech-01-hd",
+    "speech-01-turbo",
+)
+DEFAULT_VOICE_CLONE_MODEL = "speech-2.8-hd"
+
+
+def _cli_invocation_hint() -> str:
+    """For printed next-step examples, prefer ./voice_cloner when the repo launcher exists."""
+    launcher = os.path.join(_PROJECT_ROOT, "voice_cloner")
+    if os.path.isfile(launcher):
+        return "./voice_cloner"
+    return sys.argv[0]
+
+
+def _maybe_reexec_with_project_venv() -> None:
+    """
+    If this repo's minimax-tts/.venv exists, run this script with that interpreter.
+
+    Avoids a common footgun: activating a parent directory's .venv (e.g. my-tools/.venv)
+    while dependencies were installed only under minimax-tts/.venv.
+    """
+    if os.environ.get("MINIMAX_TTS_NO_LOCAL_VENV"):
+        return
+    if sys.platform == "win32":
+        candidates = [os.path.join(_PROJECT_ROOT, ".venv", "Scripts", "python.exe")]
+    else:
+        bindir = os.path.join(_PROJECT_ROOT, ".venv", "bin")
+        candidates = [
+            os.path.join(bindir, "python3"),
+            os.path.join(bindir, "python"),
+        ]
+    local_py = next((p for p in candidates if os.path.isfile(p)), None)
+    if not local_py:
+        return
+    cur = os.path.realpath(sys.executable)
+    loc = os.path.realpath(local_py)
+    if cur == loc:
+        return
+    os.execv(local_py, [local_py] + sys.argv)
+
+
+_maybe_reexec_with_project_venv()
 
 # Suppress SSL compatibility warnings on older macOS versions
 # This must be set before importing urllib3 or requests
-import os
 os.environ['PYTHONWARNINGS'] = 'ignore::DeprecationWarning'
 
 import warnings
 warnings.filterwarnings("ignore", message=".*urllib3.*")
 
 import json
-import requests
+
+try:
+    import requests
+except ModuleNotFoundError as exc:
+    if exc.name != "requests":
+        raise
+    _py = os.path.join(_PROJECT_ROOT, ".venv", "bin", "python3")
+    sys.stderr.write(
+        "Cannot import 'requests' with this interpreter:\n"
+        f"  {sys.executable}\n\n"
+        "Dependencies are installed into minimax-tts/.venv by ./install.sh.\n"
+        "Use this project's venv (from the minimax-tts directory):\n"
+        "  source .venv/bin/activate\n"
+        "  hash -r\n"
+        "  ./voice_cloner ...\n\n"
+        "Or call the venv Python explicitly:\n"
+        f"  {_py} {_SCRIPTS_DIR}/voice_cloner.py ...\n"
+        "  ./voice_cloner ...\n"
+    )
+    raise SystemExit(1) from exc
+
 from typing import Optional
 from dataclasses import dataclass
 
@@ -155,8 +238,13 @@ class MiniMaxAPIError(Exception):
 
 
 class VoiceCloner:
-    """Voice Cloner"""
-    
+    """
+    REST client for MiniMax ``/v1/voice_clone`` (and related file endpoints).
+
+    Differs from Token Plan ``mmx-cli`` (Speech 2.8 via ``mmx speech synthesize``): same model
+    family for billing/quota purposes, different transport — JSON ``model`` here vs CLI subcommands.
+    """
+
     BASE_URL = "https://api.minimaxi.com/v1"
     
     def __init__(self, api_key: Optional[str] = None, config_path: Optional[str] = None):
@@ -250,7 +338,22 @@ class VoiceCloner:
                 f"Unsupported audio format: .{file_ext}. "
                 f"Supported formats: {', '.join(allowed_formats)}"
             )
-    
+
+    @staticmethod
+    def _raise_if_voice_clone_base_resp_error(result: dict, response: object) -> None:
+        """Raise when HTTP status is OK but base_resp.status_code is non-zero (e.g. insufficient balance)."""
+        base = result.get("base_resp") or {}
+        api_sc = base.get("status_code")
+        if api_sc is not None and api_sc != 0:
+            msg = base.get("status_msg", "unknown error")
+            status = getattr(response, "status_code", None)
+            body = getattr(response, "text", "")
+            raise MiniMaxAPIError(
+                f"Voice cloning failed ({api_sc}): {msg}",
+                status,
+                body,
+            )
+
     def _do_upload(self, audio_path: str, purpose: str) -> str:
         """
         Internal method to upload audio file and get file_id.
@@ -369,7 +472,7 @@ class VoiceCloner:
         prompt_audio: Optional[str] = None,
         prompt_text: Optional[str] = None,
         text: Optional[str] = None,
-        model: str = "speech-2.8-hd"
+        model: str = DEFAULT_VOICE_CLONE_MODEL,
     ) -> VoiceCloneResult:
         """
         Clone voice and generate speech.
@@ -394,7 +497,7 @@ class VoiceCloner:
             prompt_audio: Path to the prompt audio file (optional)
             prompt_text: Text content corresponding to the prompt audio
             text: Text content to convert to speech (optional)
-            model: Model name to use (default: speech-2.8-hd)
+            model: Voice clone preview TTS model (default: speech-2.8-hd). Must be one of ``VOICE_CLONE_MODELS``.
             
         Returns:
             VoiceCloneResult: The cloning result with task_id and status
@@ -419,6 +522,12 @@ class VoiceCloner:
         
         if not audio_path:
             raise ValueError("audio_path cannot be empty")
+        
+        if model not in VOICE_CLONE_MODELS:
+            raise ValueError(
+                f"Invalid model '{model}'. Allowed: {', '.join(VOICE_CLONE_MODELS)}. "
+                "See https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone"
+            )
         
         # Step 1: Upload clone audio
         print(f"Uploading clone audio: {audio_path}")
@@ -471,6 +580,7 @@ class VoiceCloner:
             )
         
         result = response.json()
+        self._raise_if_voice_clone_base_resp_error(result, response)
         print(f"Clone request successful: {json.dumps(result, ensure_ascii=False)}")
         
         return VoiceCloneResult(
@@ -485,7 +595,7 @@ class VoiceCloner:
         prompt_file_id: Optional[str] = None,
         prompt_text: Optional[str] = None,
         text: Optional[str] = None,
-        model: str = "speech-2.8-hd"
+        model: str = DEFAULT_VOICE_CLONE_MODEL,
     ) -> VoiceCloneResult:
         """
         Clone voice using pre-obtained file_id.
@@ -499,7 +609,7 @@ class VoiceCloner:
             prompt_file_id: File ID of prompt audio (optional, from step 2)
             prompt_text: Text content corresponding to the prompt audio
             text: Text content to convert to speech (optional)
-            model: Model name to use (default: speech-2.8-hd)
+            model: Voice clone preview TTS model (default: speech-2.8-hd). Must be one of ``VOICE_CLONE_MODELS``.
             
         Returns:
             VoiceCloneResult: The cloning result with task_id and status
@@ -556,6 +666,12 @@ class VoiceCloner:
                 "  - End with a letter or number (not - or _)"
             )
         
+        if model not in VOICE_CLONE_MODELS:
+            raise ValueError(
+                f"Invalid model '{model}'. Allowed: {', '.join(VOICE_CLONE_MODELS)}. "
+                "See https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone"
+            )
+        
         # Convert file_id to integer (API requires integer, not string)
         file_id_int = int(file_id)
         
@@ -608,6 +724,7 @@ class VoiceCloner:
             )
         
         result = response.json()
+        self._raise_if_voice_clone_base_resp_error(result, response)
         print(f"Clone request successful: {json.dumps(result, ensure_ascii=False)}")
         
         return VoiceCloneResult(
@@ -786,55 +903,70 @@ Usage Steps:
   Step 2: Upload prompt audio (optional) for enhanced quality
   Step 3: Clone voice with the uploaded audio
 
+Voice ID (--voice-id / -v):
+  You choose this string to name your cloned voice; the API does not assign it for you.
+  Required for quick start and for step 3.
+
+  Naming rules (MiniMax API):
+    - Length: 8 to 256 characters
+    - Must start with a letter (A-Z or a-z)
+    - After that: only letters, digits, hyphen (-), and underscore (_)
+    - Must end with a letter or digit (not - or _)
+
+  Valid examples:    my_voice_01, Scarlett_EN, CloneVoice2024
+  Invalid examples:    myvoice     (too short: under 8 characters)
+                       1myvoice  (must start with a letter)
+                       my_voice_ (cannot end with _ or -)
+
 Quick Start (All-in-one):
   # Complete voice cloning workflow in one command
-  python voice_cloner.py --voice-id my_voice --audio reference.m4a
+  ./voice_cloner --voice-id my_voice --audio reference.m4a
 
   # With prompt audio for enhanced quality
-  python voice_cloner.py -v my_voice -a reference.m4a -p prompt.m4a -t "Prompt text"
+  ./voice_cloner -v my_voice -a reference.m4a -p prompt.m4a -t "Prompt text"
 
   # With text to synthesize
-  python voice_cloner.py --voice-id my_voice --audio reference.m4a --text "Hello world!"
+  ./voice_cloner --voice-id my_voice --audio reference.m4a --text "Hello world!"
 
   # Using API key from config file
-  python voice_cloner.py -k your-api-key -v my_voice -a reference.m4a
+  ./voice_cloner -k your-api-key -v my_voice -a reference.m4a
 
 Step-by-Step Workflow:
   # Step 1: Upload reference audio and get file_id
-  python voice_cloner.py --step 1 --audio reference.m4a
+  ./voice_cloner --step 1 --audio reference.m4a
 
   # Step 2: Upload prompt audio for enhanced quality (optional)
-  python voice_cloner.py --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
+  ./voice_cloner --step 2 --prompt-audio prompt.m4a --file-id <file_id_from_step1>
 
   # Step 3: Complete voice cloning (basic)
-  python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id>
+  ./voice_cloner --step 3 --voice-id my_voice --file-id <file_id>
   
   # Step 3: Complete voice cloning (with prompt audio)
   # NOTE: When using --prompt-file-id, you MUST provide --prompt-text or --prompt-text-file
   # The prompt_text must exactly match what is spoken in the prompt audio
-  python voice_cloner.py --step 3 --voice-id my_voice --file-id <file_id> \
+  ./voice_cloner --step 3 --voice-id my_voice --file-id <file_id> \
       --prompt-file-id <prompt_file_id> --prompt-text-file prompt_text.txt \
       --text-file speech_text.txt
 
 File Management:
   # List all uploaded files
-  python voice_cloner.py --list-files
+  ./voice_cloner --list-files
 
   # List only voice clone files
-  python voice_cloner.py --list-files --purpose voice_clone
+  ./voice_cloner --list-files --purpose voice_clone
 
   # List only prompt audio files
-  python voice_cloner.py --list-files -u prompt_audio
+  ./voice_cloner --list-files -u prompt_audio
 
   # Get detailed info about a specific file
-  python voice_cloner.py --get-file-info 123456789
+  ./voice_cloner --get-file-info 123456789
 
   # Delete a specific file (will prompt for confirmation)
-  python voice_cloner.py --delete-file 123456789
+  ./voice_cloner --delete-file 123456789
 
   # Output in JSON format
-  python voice_cloner.py --list-files --json
-  python voice_cloner.py --get-file-info 123456789 --json
+  ./voice_cloner --list-files --json
+  ./voice_cloner --get-file-info 123456789 --json
 
 For more information, visit: https://platform.minimaxi.com/docs/guides/speech-voice-clone
         """,
@@ -863,7 +995,12 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
     required_group = parser.add_argument_group("Required Arguments (Quick Start)")
     required_group.add_argument(
         "--voice-id", "-v",
-        help="Custom voice ID to identify this cloned voice"
+        help=(
+            "Your custom ID for this cloned voice (required for quick start and step 3). "
+            "Not assigned by the API. Rules: 8–256 chars; start with a letter; "
+            "only letters, digits, '-', '_' in the middle; end with a letter or digit. "
+            "Examples: my_voice_01, Scarlett_EN. See --help epilog for details."
+        ),
     )
     required_group.add_argument(
         "--audio", "-a",
@@ -890,9 +1027,14 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
     )
     optional_group.add_argument(
         "--model", "-m",
-        default="speech-2.8-hd",
-        choices=["speech-2.8", "speech-2.8-hd"],
-        help="Model to use for voice cloning (default: speech-2.8-hd)"
+        default=DEFAULT_VOICE_CLONE_MODEL,
+        choices=list(VOICE_CLONE_MODELS),
+        help=(
+            "TTS model for clone preview when --text/--text-file is used. "
+            "Official enum (default %(default)s): "
+            "https://platform.minimaxi.com/docs/api-reference/voice-cloning-clone — "
+            "e.g. speech-2.8-hd, speech-2.8-turbo (there is no bare 'speech-2.8')."
+        ),
     )
     
     # Text input from file options
@@ -1067,12 +1209,13 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
                 file_id = cloner.upload_clone_audio(args.audio)
                 print(f"\n[Step 1 Complete] Reference audio uploaded successfully")
                 print(f"  File ID: {file_id}")
+                _cmd = _cli_invocation_hint()
                 print(f"\nNext steps:")
                 print(f"  Option A: Complete cloning now")
-                print(f"    {sys.argv[0]} --step 3 --voice-id <your_voice_id> --file-id {file_id} --text-file speech_text.txt")
+                print(f"    {_cmd} --step 3 --voice-id <your_voice_id> --file-id {file_id} --text-file speech_text.txt")
                 print(f"")
                 print(f"  Option B: Upload prompt audio for enhanced quality")
-                print(f"    {sys.argv[0]} --step 2 --file-id {file_id} --prompt-audio prompt.m4a --prompt-text-file prompt_text.txt")
+                print(f"    {_cmd} --step 2 --file-id {file_id} --prompt-audio prompt.m4a --prompt-text-file prompt_text.txt")
                 return 0
             
             elif args.step == 2:
@@ -1085,10 +1228,11 @@ For more information, visit: https://platform.minimaxi.com/docs/guides/speech-vo
                 print(f"\n[Step 2 Complete] Prompt audio uploaded successfully")
                 print(f"  Prompt File ID: {prompt_file_id}")
                 print(f"  Reference File ID: {args.file_id}")
+                _cmd = _cli_invocation_hint()
                 print(f"\nNext step: Complete voice cloning")
-                print(f"  Basic: {sys.argv[0]} --step 3 --voice-id <voice_id> --file-id {args.file_id}")
+                print(f"  Basic: {_cmd} --step 3 --voice-id <voice_id> --file-id {args.file_id}")
                 print(f"  With prompt audio (recommended):")
-                print(f"    {sys.argv[0]} --step 3 --voice-id <voice_id> --file-id {args.file_id} \\")
+                print(f"    {_cmd} --step 3 --voice-id <voice_id> --file-id {args.file_id} \\")
                 print(f"        --prompt-file-id {prompt_file_id} --prompt-text-file prompt_text.txt --text-file speech_text.txt")
                 return 0
             
